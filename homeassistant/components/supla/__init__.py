@@ -1,14 +1,17 @@
 """Support for Supla devices."""
 import logging
 from typing import Optional
+from datetime import timedelta
 
 from pysupla import SuplaAPI
 import voluptuous as vol
 
-from homeassistant.const import CONF_ACCESS_TOKEN
+from homeassistant.const import CONF_ACCESS_TOKEN, CONF_SCAN_INTERVAL
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.discovery import load_platform
 from homeassistant.helpers.entity import Entity
+from homeassistant.util import Throttle
+
 
 _LOGGER = logging.getLogger(__name__)
 DOMAIN = "supla"
@@ -26,7 +29,11 @@ SUPLA_CHANNELS = "supla_channels"
 SUPLA_SERVERS = "supla_servers"
 
 SERVER_CONFIG = vol.Schema(
-    {vol.Required(CONF_SERVER): cv.string, vol.Required(CONF_ACCESS_TOKEN): cv.string}
+    {
+        vol.Required(CONF_SERVER): cv.string,
+        vol.Required(CONF_ACCESS_TOKEN): cv.string,
+        vol.Optional(CONF_SCAN_INTERVAL): cv.time_period
+    }
 )
 
 CONFIG_SCHEMA = vol.Schema(
@@ -38,6 +45,7 @@ CONFIG_SCHEMA = vol.Schema(
     extra=vol.ALLOW_EXTRA,
 )
 
+SCAN_INTERVAL = timedelta(seconds=10)
 
 def setup(hass, base_config):
     """Set up the Supla component."""
@@ -52,6 +60,9 @@ def setup(hass, base_config):
         server_address = server_conf[CONF_SERVER]
 
         server = SuplaAPI(server_address, server_conf[CONF_ACCESS_TOKEN])
+
+        # Set update interval on server to be used by channel devices
+        server.update_interval = server_conf.get(CONF_SCAN_INTERVAL, SCAN_INTERVAL)
 
         # Test connection
         try:
@@ -107,6 +118,10 @@ def discover_devices(hass, hass_config):
                 continue
 
             channel["server_name"] = server_name
+
+            # Pass configured update interval from server configuration
+            channel["update_interval"] = server.update_interval.total_seconds()
+
             component_configs.setdefault(component_name, []).append(channel)
 
     # Load discovered devices
@@ -120,7 +135,9 @@ class SuplaChannel(Entity):
     def __init__(self, channel_data):
         """Channel data -- raw channel information from PySupla."""
         self.server_name = channel_data["server_name"]
+        self.update_interval = timedelta(seconds=channel_data["update_interval"])
         self.channel_data = channel_data
+        self.update = Throttle(self.update_interval)(self._update)
 
     @property
     def server(self):
@@ -165,8 +182,9 @@ class SuplaChannel(Entity):
         )
         self.server.execute_action(self.channel_data["id"], action, **add_pars)
 
-    def update(self):
+    def _update(self):
         """Call to update state."""
+        _LOGGER.debug('Calling update on Supla channel: %d', self.channel_data["id"])
         self.channel_data = self.server.get_channel(
             self.channel_data["id"], include=["connected", "state"]
         )
