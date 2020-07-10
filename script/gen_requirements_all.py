@@ -69,6 +69,9 @@ enum34==1000000000.0.0
 
 # This is a old unmaintained library and is replaced with pycryptodome
 pycrypto==1000000000.0.0
+
+# It's built-in since Python 3.5. Breaks other installations
+typing==1000000000.0.0
 """
 
 IGNORE_PRE_COMMIT_HOOK_ID = (
