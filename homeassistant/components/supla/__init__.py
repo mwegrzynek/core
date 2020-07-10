@@ -97,7 +97,7 @@ def discover_devices(hass, hass_config):
 
     for server_name, server in hass.data[SUPLA_SERVERS].items():
 
-        for channel in server.get_channels(include=["iodevice"]):
+        for channel in server.get_channels(include=["iodevice", "connected", "state"]):
             channel_function = channel["function"]["name"]
             if channel_function == SUPLA_FUNCTION_NONE:
                 _LOGGER.debug(
@@ -160,6 +160,8 @@ class SuplaChannel(Entity):
     @property
     def available(self) -> bool:
         """Return True if entity is available."""
+        _LOGGER.debug('Channel data: %s', self.channel_data)
+
         if self.channel_data is None:
             return False
         state = self.channel_data.get("state")
